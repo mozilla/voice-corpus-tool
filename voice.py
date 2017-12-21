@@ -236,7 +236,7 @@ class Sample(object):
         return sample
 
     def __str__(self):
-        return 'Filename: %s\nTranscript: %s' % (self.file.filename, self.transcript)
+        return 'Filename: "%s"\nTranscript: "%s"' % (self.file.filename, self.transcript)
 
 class DataSetBuilder(CommandLineParser):
     def __init__(self):
@@ -345,11 +345,11 @@ class DataSetBuilder(CommandLineParser):
         if ext == '.csv':
             samples = [l.strip().split(',') for l in open(source, 'r').readlines()[1:]]
             samples = [Sample(WavFile(filename=s[0]), s[2]) for s in samples if len(s) == 3]
-        elif ext == '.wav':
-            samples = glob.glob(source)
-            samples = [Sample(WavFile(filename=s), '') for s in samples]
         elif source in self.named_buffers:
             samples = self._clone_buffer(self.named_buffers[source])
+        else:
+            samples = glob.glob(source)
+            samples = [Sample(WavFile(filename=s), '') for s in samples]
         if len(samples) == 0:
             raise Error('No samples found!')
         return samples
@@ -420,9 +420,10 @@ class DataSetBuilder(CommandLineParser):
         print('Printed %d samples.' % len(self.samples))
 
     def _play(self):
+        print('Playing:')
         for s in self.samples:
             s.write()
-            print('Playing: ' + s.transcript)
+            print(s)
             subprocess.call(['play', '-q', s.file.filename])
         print('Played %d samples.' % len(self.samples))
 

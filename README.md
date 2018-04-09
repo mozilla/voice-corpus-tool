@@ -2,7 +2,7 @@
 A tool for creation, manipulation and maintenance of voice corpora
 
 ## Installation
-The tool requires Python packges `pydub` and `intervaltree`.
+The tool requires Python packages `pydub` and `intervaltree`.
 You can install them from the project root using the following command:
 ```
 $ pip install -r requirements.txt
@@ -31,14 +31,14 @@ Transcript: ""
 Played 3 samples.
 ```
 
-The first command __add__ requires one parameter. In our case we pass `'/data/sample-00300*.mp3'` in apostrophs to ensure the shell is not resolving the asterisk, but just forwards it to the tool which will do the wildcard processing instead.
+The first command __add__ requires one parameter. In our case we pass `'/data/sample-00300*.mp3'` in apostrophes to ensure the shell is not resolving the asterisk, but just forwards it to the tool which will do the wildcard processing instead.
 This operation adds all wildcard-matching samples to the virtual buffer. To document this fact, it prints "Added 10 samples to buffer.".
 
 Now the second and third commands (__skip__ and __take__) and their respective output should explain themselves.
 
 Finally the command __play__ results in playing all remaining samples of the buffer. As they were directly added as files, there is no transcript associated with them. If samples were loaded from a voice corpus CSV file (like provided by the Common Voice project), each (voice) sample would feature its transcript. This transcript will then be kept associated to its sample throughout all further 1-to-1 processing of this sample.
 
-Be aware that the "buffer" is virtual in the sense of not loading any audio data into memory. It's purpose is just to assign operations to sequences of samples. Only final output commands like __write__ or __play__ and the command __augment__ result in actual sample processing (on a file by file basis).
+Be aware that the "buffer" is virtual in the sense of not loading any audio data into memory. Its purpose is just to assign operations to sequences of samples. Only final output commands like __write__ or __play__ and the command __augment__ result in actual sample processing (on a file by file basis).
 
 For getting a complete list of supported commands just use the help command like this:
 
@@ -65,7 +65,7 @@ Buffer operations:
   order  
 	Order samples in buffer by length
 
-  reverse  
+  reverse  
 	Reverse order of samples in buffer
 
   take <number> 
@@ -84,7 +84,7 @@ Buffer operations:
 		number: int - Number of samples
 
   find <keyword> 
-	Drop all samples, who's transcription does not contain a keyword
+	Drop all samples whose transcription does not contain a keyword
 	Arguments:
 		keyword: string - Keyword to look for in transcriptions
 

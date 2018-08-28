@@ -24,13 +24,17 @@ channels_counter = Counter()
 def enrich_sample(sample_dir):
     meta = tree.load_meta(sample_dir)
     filename = tree.sample_path(sample_dir)
-    output = subprocess.check_output(['ffprobe', '-hide_banner', '-i', filename], stderr=subprocess.STDOUT)
-    output = output.strip().split('\n')
     codec = 'unknown'
     encoding = 'unknown'
     duration = 0.0
     rate = 0
     channels = 1
+
+    try:
+        output = subprocess.check_output(['ffprobe', '-hide_banner', '-i', filename], stderr=subprocess.STDOUT)
+    except:
+        return (codec, encoding, duration, rate, channels)
+    output = output.strip().split('\n')
 
     for line in output:
         line = line.strip()
@@ -58,7 +62,7 @@ def enrich_sample(sample_dir):
 print('Reading samples and updating JSON files...')
 
 pool = Pool(processes=8)
-for codec, encoding, duration, rate, channels in tqdm.tqdm(pool.imap_unordered(enrich_sample, sample_dirs), total=len(sample_dirs)):
+for codec, encoding, duration, rate, channels in tqdm.tqdm(pool.imap_unordered(enrich_sample, sample_dirs), mininterval=0.5, total=len(sample_dirs)):
     total_duration += duration
     total_duration_channels += duration * channels
     codec_counter[codec] += 1

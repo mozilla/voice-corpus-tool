@@ -61,7 +61,7 @@ def convert_sample(sample_dir):
 print('Converting samples...')
 
 pool = Pool(processes=8)
-for _ in tqdm.tqdm(pool.imap_unordered(convert_sample, sample_dirs), ascii=True, ncols=50, mininterval=0.5, total=len(sample_dirs)):
+for _ in tqdm.tqdm(pool.imap_unordered(convert_sample, sample_dirs), ascii=True, ncols=100, mininterval=0.5, total=len(sample_dirs)):
     pass
 
 print('')

@@ -62,7 +62,7 @@ def enrich_sample(sample_dir):
 print('Reading samples and updating JSON files...')
 
 pool = Pool(processes=8)
-for codec, encoding, duration, rate, channels in tqdm.tqdm(pool.imap_unordered(enrich_sample, sample_dirs), ascii=True, ncols=50, mininterval=0.5, total=len(sample_dirs)):
+for codec, encoding, duration, rate, channels in tqdm.tqdm(pool.imap_unordered(enrich_sample, sample_dirs), ascii=True, ncols=100, mininterval=0.5, total=len(sample_dirs)):
     total_duration += duration
     total_duration_channels += duration * channels
     codec_counter[codec] += 1

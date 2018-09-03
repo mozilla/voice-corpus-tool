@@ -13,7 +13,7 @@ def fail():
 if not len(sys.argv) == 6:
     fail()
 
-mode, rate, prefix, codec = sys.argv[2:]
+base_dir, mode, rate, prefix, codec = sys.argv[1:]
 
 if not mode in ['mono', 'split', 'stereo']:
     print('Unknown mode: %s' % mode)
@@ -27,8 +27,7 @@ if rate <= 0:
     print('Wrong rate: %d' % rate)
     fail()
 
-sample_dirs = tree.sample_dirs(sys.argv[1])
-to_percent = 100.0 / float(len(sample_dirs))
+sample_dirs = tree.sample_dirs(base_dir)
 
 def convert_sample(sample_dir):
     try:

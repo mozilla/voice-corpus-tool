@@ -36,13 +36,14 @@ def convert_sample(sample_dir):
 
         if not 'codec' in meta:
             return
+        target_codec = meta['codec'].split(',')[0]
         if not 'channels' in meta:
             return
         channels = meta['channels']
         if channels < 1:
             return
 
-        args = ['sox', '-t', meta['codec'], tree.sample_path(sample_dir), '-t', codec, '-r', str(rate)]
+        args = ['sox', '-t', target_codec, tree.sample_path(sample_dir), '-t', codec, '-r', str(rate)]
 
         if mode == 'mono':
             subprocess.check_output(args + [os.path.join(sample_dir, prefix + '.' + codec), 'remix', '1-' + str(channels)], stderr=subprocess.STDOUT)

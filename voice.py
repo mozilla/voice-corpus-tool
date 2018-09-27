@@ -1,5 +1,7 @@
 #!/usr/bin/env python2
 from __future__ import absolute_import, division, print_function
+
+import csv
 import os
 import sys
 import math
@@ -341,10 +343,10 @@ class DataSetBuilder(CommandLineParser):
 
     def _load_samples(self, source):
         ext = source[-4:].lower()
-        samples = []
         if ext == '.csv':
-            samples = [l.strip().split(',') for l in open(source, 'r').readlines()[1:]]
-            samples = [Sample(WavFile(filename=s[0]), s[2]) for s in samples if len(s) == 3]
+            with open(source) as source_f:
+                reader = csv.reader(source_f, delimiter=',')
+                samples = [Sample(WavFile(filename=s[0]), s[2]) for s in list(reader)[1:]]
         elif source in self.named_buffers:
             samples = self._clone_buffer(self.named_buffers[source])
         else:

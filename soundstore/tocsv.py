@@ -16,22 +16,23 @@ if not len(sys.argv) == 4:
     fail()
 
 base_dir, prefix, suffix = sys.argv[1:]
-
+base_dir = os.path.abspath(base_dir)
 sample_dirs = tree.sample_dirs(base_dir)
 
 def convert_sample(sample_dir):
     try:
         meta = tree.load_meta(sample_dir)
         pattern = os.path.join(sample_dir, prefix + '*' + suffix)
-        return [(filename, os.stat(filename).st_size, meta['tags']) for filename in glob.glob(pattern)]
+        return [(os.path.relpath(filename, base_dir), os.stat(filename).st_size, meta['tags']) for filename in glob.glob(pattern)]
     except Exception as ex:
         print(ex)
         return []
 
 print('Collecting samples...')
 
-with open(prefix + '.csv', 'wb') as csvfile:
+with open(os.path.join(base_dir, prefix + '.csv'), 'w') as csvfile:
     writer = csv.writer(csvfile)
+    writer.writerow(['wav_filename', 'wav_filesize', 'transcript', 'tags'])
     pool = Pool(processes=8)
     for files in tqdm.tqdm(pool.imap_unordered(convert_sample, sample_dirs), ascii=True, ncols=100, mininterval=0.5, total=len(sample_dirs)):
         for filename, filesize, tags in files:

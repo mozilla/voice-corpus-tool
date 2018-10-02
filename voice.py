@@ -344,9 +344,15 @@ class DataSetBuilder(CommandLineParser):
     def _load_samples(self, source):
         ext = source[-4:].lower()
         if ext == '.csv':
+            parent = os.path.dirname(os.path.normpath(source))
+            checkrelative = lambda filename: filename if os.path.isabs(filename) else os.path.normpath(os.path.join(parent, filename))
             with open(source) as source_f:
                 reader = csv.reader(source_f, delimiter=',')
-                samples = [Sample(WavFile(filename=s[0]), s[2]) for s in list(reader)[1:]]
+                rows = list(reader)
+                filename_index = rows[0].index('wav_filename')
+                transcript_index = rows[0].index('transcript')
+                samples = [Sample(WavFile(filename=checkrelative(row[filename_index])), row[transcript_index])
+                           for row in rows[1:]]
         elif source in self.named_buffers:
             samples = self._clone_buffer(self.named_buffers[source])
         else:
@@ -430,20 +436,20 @@ class DataSetBuilder(CommandLineParser):
         print('Played %d samples.' % len(self.samples))
 
     def _write(self, dir_name):
-        if dir_name[-1] == '/':
-            dir_name = dir_name[:-1]
-        csv_filename = dir_name + '.csv'
+        parent, name = os.path.split(os.path.normpath(dir_name))
+        csv_filename = os.path.join(parent, name + '.csv')
         if os.path.exists(dir_name) or os.path.exists(csv_filename):
             return 'Cannot write buffer, as either "%s" or "%s" already exist.' % (dir_name, csv_filename)
         os.makedirs(dir_name)
         samples = [(i, sample) for i, sample in enumerate(self.samples)]
-        def write_sample(i_sample):
-            i, sample = i_sample
-            sample.write(filename='%s/sample-%d.wav' % (dir_name, i))
-        self._map(samples, write_sample)
         with open(csv_filename, 'w') as csv:
             csv.write('wav_filename,wav_filesize,transcript\n')
-            csv.write(''.join('%s,%d,%s\n' % (s.file.filename, s.file.filesize, s.transcript) for s in self.samples))
+            def write_sample(i_sample):
+                i, sample = i_sample
+                samplename = 'sample-%d.wav' % i
+                sample.write(filename=os.path.join(dir_name, samplename))
+                csv.write(''.join('%s,%d,%s\n' % (os.path.join(name, samplename), sample.file.filesize, sample.transcript)))
+            self._map(samples, write_sample)
         print('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 
     def _reverb(self, wet_only=False, reverberance=0.5, hf_damping=0.5, room_scale=1.0, stereo_depth=1.0, pre_delay=0, wet_gain=0):

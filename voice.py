@@ -442,13 +442,14 @@ class DataSetBuilder(CommandLineParser):
             return 'Cannot write buffer, as either "%s" or "%s" already exist.' % (dir_name, csv_filename)
         os.makedirs(dir_name)
         samples = [(i, sample) for i, sample in enumerate(self.samples)]
-        with open(csv_filename, 'w') as csv:
-            csv.write('wav_filename,wav_filesize,transcript\n')
+        with open(csv_filename, 'w') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['wav_filename', 'wav_filesize', 'transcript'])
             def write_sample(i_sample):
                 i, sample = i_sample
                 samplename = 'sample-%d.wav' % i
                 sample.write(filename=os.path.join(dir_name, samplename))
-                csv.write(''.join('%s,%d,%s\n' % (os.path.join(name, samplename), sample.file.filesize, sample.transcript)))
+                writer.writerow([os.path.join(name, samplename), sample.file.filesize, sample.transcript])
             self._map(samples, write_sample)
         print('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 

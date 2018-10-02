@@ -282,8 +282,14 @@ class DataSetBuilder(CommandLineParser):
         cmd = self.add_command('skip', self._skip, 'Skip given number of samples from the beginning of current buffer')
         cmd.add_argument('number', 'int', 'Number of samples')
 
-        cmd = self.add_command('find', self._find, 'Drop all samples, who\'s transcription does not contain a keyword' )
+        cmd = self.add_command('find', self._find, 'Drop all samples, whose transcription does not contain a keyword' )
         cmd.add_argument('keyword', 'string', 'Keyword to look for in transcriptions')
+
+        cmd = self.add_command('tagged', self._tagged, 'Keep only samples with a specific tag' )
+        cmd.add_argument('tag', 'string', 'Tag to look for')
+
+        cmd = self.add_command('settag', self._set_tag, 'Sets a tag on all samples of current buffer' )
+        cmd.add_argument('tag', 'string', 'Tag to set')
 
         cmd = self.add_command('clear', self._clear, 'Clears sample buffer')
 
@@ -450,6 +456,18 @@ class DataSetBuilder(CommandLineParser):
     def _find(self, keyword):
         self.samples = [s for s in self.samples if keyword in s.transcript]
         log('Found %d samples containing keyword "%s".' % (len(self.samples), keyword))
+
+    def _tagged(self, tag):
+        self.samples = [s for s in self.samples if tag in s.tags]
+        log('Found %d samples with tag "%s".' % (len(self.samples), tag))
+
+    def _set_tag(self, tag):
+        c = 0
+        for s in self.samples:
+            if not tag in s.tags:
+                c = c + 1
+                s.tags.append(tag)
+        log('Tagged %d samples as "%s".' % (c, tag))
 
     def _print(self):
         for s in self.samples:

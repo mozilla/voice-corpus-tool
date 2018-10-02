@@ -15,6 +15,9 @@ from intervaltree import IntervalTree
 from pydub import AudioSegment
 from multiprocessing.dummy import Pool
 
+def log(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 class Error(Exception):
     def __init__(self, message):
         self.message = message
@@ -114,32 +117,32 @@ class CommandLineParser(object):
         state = _CommandLineParserState(tokens)
         result = self._parse(state)
         if result:
-            print(result)
-            print()
+            log(result)
+            log()
             self._cmd_help()
             return
 
     def _cmd_help(self):
-        print('A tool to apply a series of commands to a collection of samples.')
-        print('Usage: voice.py (command <arg1> <arg2> ... [-opt1 [<value>]] [-opt2 [<value>]] ...)*\n')
-        print('Commands:')
+        log('A tool to apply a series of commands to a collection of samples.')
+        log('Usage: voice.py (command <arg1> <arg2> ... [-opt1 [<value>]] [-opt2 [<value>]] ...)*\n')
+        log('Commands:')
         for cmd in self.command_list:
-            print()
+            log()
             if isinstance(cmd, basestring):
-                print(cmd + ':')
+                log(cmd + ':')
                 continue
             arg_desc = ' '.join('<%s>' % arg.name for arg in cmd.arguments)
             opt_desc = ' '.join(('[-%s%s]' % (opt.name, ' <%s>' % opt.name if opt.type != 'bool' else '')) for _, opt in cmd.options.items())
-            print('  %s %s %s' % (cmd.name, arg_desc, opt_desc))
-            print('\t%s' % cmd.description)
+            log('  %s %s %s' % (cmd.name, arg_desc, opt_desc))
+            log('\t%s' % cmd.description)
             if len(cmd.arguments) > 0:
-                print('\tArguments:')
+                log('\tArguments:')
                 for arg in cmd.arguments:
-                    print('\t\t%s: %s - %s' % (arg.name, arg.type, arg.description))
+                    log('\t\t%s: %s - %s' % (arg.name, arg.type, arg.description))
             if len(cmd.options) > 0:
-                print('\tOptions:')
+                log('\tOptions:')
                 for _, opt in cmd.options.items():
-                    print('\t\t-%s: %s - %s' % (opt.name, opt.type, opt.description))
+                    log('\t\t-%s: %s - %s' % (opt.name, opt.type, opt.description))
 
 tmp_dir = None
 tmp_index = 0
@@ -288,6 +291,8 @@ class DataSetBuilder(CommandLineParser):
 
         cmd = self.add_command('play', self._play, 'Play samples of current buffer')
 
+        cmd = self.add_command('pipe', self._pipe, 'Pipe raw sample data of current buffer to stdout. Could be piped to "aplay -r 44100 -c 2 -t raw -f s16".')
+
         cmd = self.add_command('write', self._write, 'Write samples of current buffer to disk')
         cmd.add_argument('dir_name', 'string', 'Path to the new sample directory. The directory and a file with the same name plus extension ".csv" should not exist.')
 
@@ -365,23 +370,23 @@ class DataSetBuilder(CommandLineParser):
     def _add(self, source):
         samples = self._load_samples(source)
         self.samples.extend(samples)
-        print('Added %d samples to buffer.' % len(samples))
+        log('Added %d samples to buffer.' % len(samples))
 
     def _shuffle(self):
         shuffle(self.samples)
-        print('Shuffled buffer.')
+        log('Shuffled buffer.')
 
     def _order(self):
         self.samples = sorted(self.samples, key=lambda s: s.file.filesize)
-        print('Ordered buffer by file lenghts.')
+        log('Ordered buffer by file lenghts.')
 
     def _reverse(self):
         self.samples.reverse()
-        print('Reversed buffer.')
+        log('Reversed buffer.')
 
     def _take(self, number):
         self.samples = self.samples[:number]
-        print('Took %d samples as new buffer.' % number)
+        log('Took %d samples as new buffer.' % number)
 
     def _repeat(self, number):
         samples = self.samples[:]
@@ -389,51 +394,60 @@ class DataSetBuilder(CommandLineParser):
             for sample in self.samples:
                 samples.append(sample.clone())
         self.samples = samples
-        print('Repeated samples in buffer %d times as new buffer.' % number)
+        log('Repeated samples in buffer %d times as new buffer.' % number)
 
     def _skip(self, number):
         self.samples = self.samples[number:]
-        print('Removed first %d samples from buffer.' % number)
+        log('Removed first %d samples from buffer.' % number)
 
     def _clear(self):
         self.samples = []
-        print('Removed all samples from buffer.')
+        log('Removed all samples from buffer.')
 
     def _set(self, name):
         self.named_buffers[name] = self._clone_buffer(self.samples)
-        print('Set named buffer "%s" to samples of buffer.' % name)
+        log('Set named buffer "%s" to samples of buffer.' % name)
 
     def _stash(self, name):
         self.named_buffers[name] = self.samples
         self.samples = []
-        print('Set named buffer "%s" to samples of buffer.' % name)
+        log('Set named buffer "%s" to samples of buffer.' % name)
 
     def _push(self, name):
         if not name in self.named_buffers:
             self.named_buffers[name] = []
         self.named_buffers[name].extend(self._clone_buffer(self.samples))
-        print('Appended samples of buffer to named buffer "%s".' % name)
+        log('Appended samples of buffer to named buffer "%s".' % name)
 
     def _drop(self, name):
         del self.named_buffers[name]
-        print('Dropped named buffer "%s".' % name)
+        log('Dropped named buffer "%s".' % name)
 
     def _find(self, keyword):
         self.samples = [s for s in self.samples if keyword in s.transcript]
-        print('Found %d samples containing keyword "%s".' % (len(self.samples), keyword))
+        log('Found %d samples containing keyword "%s".' % (len(self.samples), keyword))
 
     def _print(self):
         for s in self.samples:
-            print(s)
-        print('Printed %d samples.' % len(self.samples))
+            log(s)
+        log('Printed %d samples.' % len(self.samples))
 
     def _play(self):
-        print('Playing:')
+        log('Playing:')
         for s in self.samples:
             s.write()
-            print(s)
+            log(s)
             subprocess.call(['play', '-q', s.file.filename])
-        print('Played %d samples.' % len(self.samples))
+        log('Played %d samples.' % len(self.samples))
+
+    def _pipe(self):
+        log('Piping:')
+        for s in self.samples:
+            s.write()
+            log(s)
+            seg = s.read_audio_segment()
+            sys.stdout.write(seg.set_sample_width(2).set_frame_rate(88200).raw_data)
+        log('Piped %d samples.' % len(self.samples))
 
     def _write(self, dir_name):
         parent, name = os.path.split(os.path.normpath(dir_name))
@@ -451,14 +465,14 @@ class DataSetBuilder(CommandLineParser):
                 sample.write(filename=os.path.join(dir_name, samplename))
                 writer.writerow([os.path.join(name, samplename), sample.file.filesize, sample.transcript])
             self._map(samples, write_sample)
-        print('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
+        log('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 
     def _reverb(self, wet_only=False, reverberance=0.5, hf_damping=0.5, room_scale=1.0, stereo_depth=1.0, pre_delay=0, wet_gain=0):
         effect = 'reverb %s%d %d %d %d %d %d' % \
             ('-w ' if wet_only else '', int(reverberance*100.0), int(hf_damping*100.0), int(room_scale*100.0), int(stereo_depth*100.0), pre_delay, wet_gain)
         for s in self.samples:
             s.add_sox_effect(effect)
-        print('Added reverberation to %d samples in buffer.' % len(self.samples))
+        log('Added reverberation to %d samples in buffer.' % len(self.samples))
 
     def _echo(self, gain_in, gain_out, delay_decay):
         delay_decay = delay_decay.split(',')
@@ -467,31 +481,31 @@ class DataSetBuilder(CommandLineParser):
         effect = 'echo %f %f %s' % (gain_in, gain_out, ' '.join(delay_decay))
         for s in self.samples:
             s.add_sox_effect(effect)
-        print('Added echo effect to %d samples in buffer.' % len(self.samples))
+        log('Added echo effect to %d samples in buffer.' % len(self.samples))
 
     def _speed(self, factor):
         effect = 'speed %f' % factor
         for s in self.samples:
             s.add_sox_effect(effect)
-        print('Added speed effect to %d samples in buffer.' % len(self.samples))
+        log('Added speed effect to %d samples in buffer.' % len(self.samples))
 
     def _pitch(self, cents):
         effect = 'pitch %d' % cents
         for s in self.samples:
             s.add_sox_effect(effect)
-        print('Added pitch effect to %d samples in buffer.' % len(self.samples))
+        log('Added pitch effect to %d samples in buffer.' % len(self.samples))
 
     def _tempo(self, factor):
         effect = 'tempo -s %f' % factor
         for s in self.samples:
             s.add_sox_effect(effect)
-        print('Added tempo effect to %d samples in buffer.' % len(self.samples))
+        log('Added tempo effect to %d samples in buffer.' % len(self.samples))
 
     def _sox(self, effect, args):
         effect = '%s %s' % (effect, ' '.join(args.split(',')))
         for s in self.samples:
             s.add_sox_effect(effect)
-        print('Added %s effect to %d samples in buffer.' % (effect, len(self.samples)))
+        log('Added %s effect to %d samples in buffer.' % (effect, len(self.samples)))
 
     def _augment(self, source, times=1, gain=-8):
         aug_samples = self._load_samples(source)
@@ -539,7 +553,7 @@ class DataSetBuilder(CommandLineParser):
             sample.write_audio_segment(orig_seg)
 
         self._map(positions, augment_sample)
-        print('Augmented %d samples in buffer.' % len(self.samples))
+        log('Augmented %d samples in buffer.' % len(self.samples))
 
 def main():
     parser = DataSetBuilder()
@@ -549,4 +563,4 @@ if __name__ == '__main__' :
     try:
         main()
     except KeyboardInterrupt:
-        print('Interrupted by user')
+        log('Interrupted by user')

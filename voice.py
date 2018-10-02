@@ -4,15 +4,16 @@ from __future__ import absolute_import, division, print_function
 import csv
 import os
 import sys
-import math
-import subprocess
-import tempfile
 import glob
+import math
+import shutil
+import tempfile
+import subprocess
 from threading import Lock
 from random import shuffle
 from shutil import copyfile
-from intervaltree import IntervalTree
 from pydub import AudioSegment
+from intervaltree import IntervalTree
 from multiprocessing.dummy import Pool
 
 def log(*args, **kwargs):
@@ -152,20 +153,34 @@ def get_tmp_filename():
     global tmp_index, tmp_dir
     with tmp_lock:
         if not tmp_dir:
-            tmp_dir = tempfile.mkdtemp()
+            tmp_dir = tempfile.mkdtemp(dir=os.getcwd(), prefix='.__tmp')
         tmp_index += 1
-        return '%s/%d.wav' % (tmp_dir, tmp_index)
+        return os.path.join(tmp_dir, '%d.wav' % tmp_index)
+
+def to_float(str, ifnot):
+    try:
+        f = float(value)
+        return f
+    except:
+        return ifnot
+
+def to_int(str, ifnot):
+    try:
+        n = int(value)
+        return n
+    except:
+        return ifnot
 
 class WavFile(object):
-    def __init__(self, filename=None):
+    def __init__(self, filename=None, filesize=-1, duration=-1):
         self.filename = os.path.abspath(filename) if filename else get_tmp_filename()
+        self._filesize = filesize
+        self._duration = duration
         self.file_is_tmp = not filename
         self._stats = None
-        self._duration = -1
-        self._filesize = -1
 
     def __del__(self):
-        if self.file_is_tmp:
+        if self.file_is_tmp and os.path.exists(self.filename):
             os.remove(self.filename)
 
     def save_as(self, filename):
@@ -210,9 +225,10 @@ class WavFile(object):
         return float(self.stats['Volume adjustment'])
 
 class Sample(object):
-    def __init__(self, file, transcript):
+    def __init__(self, file, transcript=None, tags=[]):
         self.file = file
         self.transcript = transcript
+        self.tags = tags
         self.effects = ''
 
     def write(self, filename=None):
@@ -236,7 +252,7 @@ class Sample(object):
         segment.export(self.file.filename, format="wav")
 
     def clone(self):
-        sample = Sample(self.file, self.transcript)
+        sample = Sample(self.file, transcript=self.transcript, tags=self.tags)
         sample.effects = self.effects
         return sample
 
@@ -354,10 +370,18 @@ class DataSetBuilder(CommandLineParser):
             with open(source) as source_f:
                 reader = csv.reader(source_f, delimiter=',')
                 rows = list(reader)
-                filename_index = rows[0].index('wav_filename')
-                transcript_index = rows[0].index('transcript')
-                samples = [Sample(WavFile(filename=checkrelative(row[filename_index])), row[transcript_index])
-                           for row in rows[1:]]
+                head = rows[0]
+                rows = rows[1:]
+                filename_index   = head.index('wav_filename')
+                filesize_index   = head.index('wav_filesize') if 'wav_filesize' in head else None
+                duration_index   = head.index('duration')     if 'duration'     in head else None
+                transcript_index = head.index('transcript')   if 'transcript'   in head else None
+                tags_index       = head.index('tags')         if 'tags'         in head else None
+                samples = [Sample(WavFile(filename=checkrelative(row[filename_index]),
+                                          filesize=to_int(row[filesize_index], -1) if filesize_index else -1,
+                                          duration=to_float(row[duration_index], -1) if duration_index else -1), 
+                                  transcript=row[transcript_index] if transcript_index else None,
+                                  tags=row[tags_index].split() if tags_index else []) for row in rows]
         elif source in self.named_buffers:
             samples = self._clone_buffer(self.named_buffers[source])
         else:
@@ -458,12 +482,16 @@ class DataSetBuilder(CommandLineParser):
         samples = [(i, sample) for i, sample in enumerate(self.samples)]
         with open(csv_filename, 'w') as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(['wav_filename', 'wav_filesize', 'transcript'])
+            writer.writerow(['wav_filename', 'wav_filesize', 'transcript', 'tags', 'duration'])
             def write_sample(i_sample):
                 i, sample = i_sample
                 samplename = 'sample-%d.wav' % i
                 sample.write(filename=os.path.join(dir_name, samplename))
-                writer.writerow([os.path.join(name, samplename), sample.file.filesize, sample.transcript])
+                writer.writerow([os.path.join(name, samplename),
+                                 sample.file.filesize,
+                                 sample.transcript,
+                                 ' '.join(sample.tags),
+                                 sample.file.duration])
             self._map(samples, write_sample)
         log('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 
@@ -564,3 +592,5 @@ if __name__ == '__main__' :
         main()
     except KeyboardInterrupt:
         log('Interrupted by user')
+    if tmp_dir:
+        shutil.rmtree(tmp_dir)

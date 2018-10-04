@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 from __future__ import absolute_import, division, print_function
 
 import os
@@ -10,6 +10,13 @@ import tqdm
 import shutil
 import tempfile
 import subprocess
+import tables
+import codecs
+import numpy as np
+import scipy.io.wavfile as wav
+
+from multiprocessing.dummy import Pool
+from python_speech_features import mfcc
 from threading import Lock
 from random import shuffle
 from shutil import copyfile
@@ -320,6 +327,12 @@ class DataSetBuilder(CommandLineParser):
         cmd = self.add_command('write', self._write, 'Write samples of current buffer to disk')
         cmd.add_argument('dir_name', 'string', 'Path to the new sample directory. The directory and a file with the same name plus extension ".csv" should not exist.')
 
+        cmd = self.add_command('hdf5', self._hdf5, 'Write samples to hdf5 MFCC feature DB that can be used by DeepSpeech')
+        cmd.add_argument('alphabet_path', 'string', 'Path to DeepSpeech alphabet file to use for transcript mapping')
+        cmd.add_argument('hdf5_path', 'string', 'Target path of hdf5 feature DB')
+        cmd.add_option('ninput', 'int', 'Number of MFCC features (defaults to 26)')
+        cmd.add_option('ncontext', 'int', 'Number of frames in context window (defaults to 9)')
+
         self.add_group('Effects')
 
         cmd = self.add_command('reverb', self._reverb, 'Adds reverberation to buffer samples')
@@ -517,6 +530,48 @@ class DataSetBuilder(CommandLineParser):
                                  sample.file.duration])
             self._map('Writing samples...', samples, write_sample)
         log('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
+
+    def _hdf5(self, alphabet_path, hdf5_path, ninput=26, ncontext=9):
+        str_to_label = {}
+        alphabet_size = 0
+        with codecs.open(alphabet_path, 'r', 'utf-8') as fin:
+            for line in fin:
+                if line[0:2] == '\\#':
+                    line = '#\n'
+                elif line[0] == '#':
+                    continue
+                str_to_label[line[:-1]] = alphabet_size
+                alphabet_size += 1
+
+        def process_sample(sample):
+            sample.write()
+            samplerate, audio = wav.read(sample.file.filename)
+            features = mfcc(audio, samplerate=samplerate, numcep=ninput)[::2]
+            empty_context = np.zeros((ncontext, ninput), dtype=features.dtype)
+            features = np.concatenate((empty_context, features, empty_context))
+            transcript = np.asarray([str_to_label[c] for c in sample.transcript])
+            if (2*ncontext + len(features)) < len(transcript):
+                raise ValueError('Error: Audio file {} is too short for transcription.'.format(sample.file.filename))
+            return features, len(features), transcript, len(transcript)
+
+        out_data = self._map('Computing MFCC features...', self.samples, process_sample)
+        # list of tuples -> tuple of lists
+        features, features_len, transcript, transcript_len = zip(*out_data)
+
+        log('Writing feature DB...')
+        with tables.open_file(hdf5_path, 'w') as file:
+            features_dset = file.create_vlarray(file.root, 'features', tables.Float32Atom(), filters=tables.Filters(complevel=1))
+            # VLArray atoms need to be 1D, so flatten feature array
+            for f in features:
+                features_dset.append(np.reshape(f, -1))
+            features_len_dset = file.create_array(file.root, 'features_len', features_len)
+
+            transcript_dset = file.create_vlarray(file.root, 'transcript', tables.Int32Atom(), filters=tables.Filters(complevel=1))
+            for t in transcript:
+                transcript_dset.append(t)
+
+            transcript_len_dset = file.create_array(file.root, 'transcript_len', transcript_len)
+        log('Wrote features of %d samples to feature DB "%s".' % (len(features), hdf5_path))
 
     def _reverb(self, wet_only=False, reverberance=0.5, hf_damping=0.5, room_scale=1.0, stereo_depth=1.0, pre_delay=0, wet_gain=0):
         effect = 'reverb %s%d %d %d %d %d %d' % \

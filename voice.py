@@ -1,11 +1,12 @@
 #!/usr/bin/env python2
 from __future__ import absolute_import, division, print_function
 
-import csv
 import os
+import csv
 import sys
 import glob
 import math
+import tqdm
 import shutil
 import tempfile
 import subprocess
@@ -14,6 +15,7 @@ from random import shuffle
 from shutil import copyfile
 from pydub import AudioSegment
 from intervaltree import IntervalTree
+from multiprocessing import cpu_count
 from multiprocessing.dummy import Pool
 
 def log(*args, **kwargs):
@@ -355,9 +357,12 @@ class DataSetBuilder(CommandLineParser):
         self.named_buffers = {}
         self.samples = []
 
-    def _map(self, lst, fun, threads=8):
-        pool = Pool(threads)
-        results = pool.map(fun, lst)
+    def _map(self, message, lst, fun):
+        log(message)
+        pool = Pool(cpu_count())
+        results = []
+        for result in tqdm.tqdm(pool.imap_unordered(fun, lst), ascii=True, ncols=100, mininterval=0.5, total=len(lst)):
+            results.append(result)
         pool.close()
         pool.join()
         return results
@@ -510,7 +515,7 @@ class DataSetBuilder(CommandLineParser):
                                  sample.transcript,
                                  ' '.join(sample.tags),
                                  sample.file.duration])
-            self._map(samples, write_sample)
+            self._map('Writing samples...', samples, write_sample)
         log('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 
     def _reverb(self, wet_only=False, reverberance=0.5, hf_damping=0.5, room_scale=1.0, stereo_depth=1.0, pre_delay=0, wet_gain=0):
@@ -557,7 +562,7 @@ class DataSetBuilder(CommandLineParser):
         aug_samples = self._load_samples(source)
         tree = IntervalTree()
 
-        aug_durs = self._map(aug_samples, lambda s: int(math.ceil(s.file.duration * 1000.0)))
+        aug_durs = self._map('Reading augmentation sample durations...', aug_samples, lambda s: int(math.ceil(s.file.duration * 1000.0)))
         total_aug_dur = sum(aug_durs)
         position = 0
         for i, sample in enumerate(aug_samples):
@@ -568,7 +573,7 @@ class DataSetBuilder(CommandLineParser):
         def prepare_sample(s):
             s.write()
             return int(math.ceil(s.file.duration * 1000.0))
-        orig_durs = self._map(self.samples, prepare_sample)
+        orig_durs = self._map('Reading buffer sample durations...', self.samples, prepare_sample)
         total_orig_dur = sum(orig_durs)
 
         positions = []
@@ -598,7 +603,7 @@ class DataSetBuilder(CommandLineParser):
             orig_seg = orig_seg.overlay(aug_seg)
             sample.write_audio_segment(orig_seg)
 
-        self._map(positions, augment_sample)
+        self._map('Augmenting samples...', positions, augment_sample)
         log('Augmented %d samples in buffer.' % len(self.samples))
 
 def main():

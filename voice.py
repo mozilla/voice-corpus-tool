@@ -243,7 +243,7 @@ class Sample(object):
     def write(self, filename=None):
         if len(self.effects) > 0:
             file = WavFile(filename=filename)
-            subprocess.call(['sox', self.file.filename, file.filename] + self.effects.strip().split(' '))
+            subprocess.check_output(['sox', self.file.filename, file.filename] + self.effects.strip().split(' '))
             self.effects = ''
             self.file = file
         elif filename:
@@ -337,6 +337,10 @@ class DataSetBuilder(CommandLineParser):
         cmd.add_argument('name', 'string', 'Name of the named buffer')
         cmd.add_option('percent', 'int', 'Percentage of samples from the beginning of buffer. If omitted, complete buffer.')
 
+        cmd = self.add_command('slice', self._slice, 'Moves portion of named buffer to current buffer')
+        cmd.add_argument('name', 'string', 'Name of the named buffer')
+        cmd.add_argument('percent', 'int', 'Percentage of samples from the beginning of named buffer')
+
         cmd = self.add_command('drop', self._drop, 'Drops named buffer')
         cmd.add_argument('name', 'string', 'Name of the named buffer')
 
@@ -402,7 +406,7 @@ class DataSetBuilder(CommandLineParser):
 
     def _map(self, message, lst, fun):
         log(message)
-        pool = Pool(cpu_count())
+        pool = Pool(1)
         results = []
         for result in tqdm.tqdm(pool.imap_unordered(fun, lst), ascii=True, ncols=100, mininterval=0.5, total=len(lst)):
             results.append(result)
@@ -499,6 +503,16 @@ class DataSetBuilder(CommandLineParser):
             self.named_buffers[name] = []
         self.named_buffers[name].extend(self._clone_buffer(self.samples[:upto]))
         log('Appended copies of first %d samples of current buffer to named buffer "%s".' % (upto, name))
+
+    def _slice(self, name, percent):
+        buffer = self.named_buffers[name]
+        if buffer:
+            upto = int(math.ceil(percent * len(buffer) / 100.0))
+            self.named_buffers[name] = buffer[upto:]
+            self.samples.extend(buffer[:upto])
+            log('Moved first %d samples of named buffer "%s" to end of current buffer.' % (upto, name))
+        else:
+            log('No buffer of name "%s"' % name)
 
     def _drop(self, name):
         del self.named_buffers[name]

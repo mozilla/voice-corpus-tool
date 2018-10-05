@@ -1,4 +1,10 @@
 #!/bin/bash
-base_dir=`dirname $0`/..
-source "${base_dir}/venv/bin/activate"
-python3 -u "${base_dir}/voice.py" "$@"
+bsrc="${BASH_SOURCE[0]}"
+while [ -h "$bsrc" ]; do
+  base_dir="$( cd -P "$( dirname "$bsrc" )" >/dev/null && pwd )"
+  bsrc="$(readlink "$bsrc")"
+  [[ $bsrc != /* ]] && bsrc="$base_dir/$bsrc"
+done
+base_dir="$( cd -P "$( dirname "$bsrc" )" >/dev/null && pwd )"
+source "${base_dir}/../venv/bin/activate"
+python3 -u "${base_dir}/../voice.py" "$@"

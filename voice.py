@@ -325,14 +325,17 @@ class DataSetBuilder(CommandLineParser):
 
         self.add_group('Named buffers')
 
-        cmd = self.add_command('set', self._set, 'Replaces named buffer with contents of buffer')
+        cmd = self.add_command('set', self._set, 'Replaces named buffer with portion of buffer')
         cmd.add_argument('name', 'string', 'Name of the named buffer')
+        cmd.add_option('percent', 'int', 'Percentage of samples from the beginning of buffer. If omitted, complete buffer.')
 
-        cmd = self.add_command('stash', self._stash, 'Moves buffer to named buffer (buffer will be empty afterwards)')
+        cmd = self.add_command('stash', self._stash, 'Moves buffer portion to named buffer. Moved samples will not remain in main buffer.')
         cmd.add_argument('name', 'string', 'Name of the named buffer')
+        cmd.add_option('percent', 'int', 'Percentage of samples from the beginning of buffer. If omitted, complete buffer.')
 
-        cmd = self.add_command('push', self._push, 'Appends buffer to named buffer')
+        cmd = self.add_command('push', self._push, 'Appends portion of buffer samples to named buffer')
         cmd.add_argument('name', 'string', 'Name of the named buffer')
+        cmd.add_option('percent', 'int', 'Percentage of samples from the beginning of buffer. If omitted, complete buffer.')
 
         cmd = self.add_command('drop', self._drop, 'Drops named buffer')
         cmd.add_argument('name', 'string', 'Name of the named buffer')
@@ -479,20 +482,23 @@ class DataSetBuilder(CommandLineParser):
         self.samples = []
         log('Removed all samples from buffer.')
 
-    def _set(self, name):
-        self.named_buffers[name] = self._clone_buffer(self.samples)
-        log('Set named buffer "%s" to samples of buffer.' % name)
+    def _set(self, name, percent=100):
+        upto = int(math.ceil(percent * len(self.samples) / 100.0))
+        self.named_buffers[name] = self._clone_buffer(self.samples[:upto])
+        log('Copied first %d samples of current buffer to named buffer "%s" (replacing its contents).' % (upto, name))
 
-    def _stash(self, name):
-        self.named_buffers[name] = self.samples
-        self.samples = []
-        log('Set named buffer "%s" to samples of buffer.' % name)
+    def _stash(self, name, percent=100):
+        upto = int(math.ceil(percent * len(self.samples) / 100.0))
+        self.named_buffers[name] = self.samples[:upto]
+        self.samples = self.samples[upto:]
+        log('Moved first %d samples of current buffer to named buffer "%s" (replacing its contents).' % (upto, name))
 
-    def _push(self, name):
+    def _push(self, name, percent=100):
+        upto = int(math.ceil(percent * len(self.samples) / 100.0))
         if not name in self.named_buffers:
             self.named_buffers[name] = []
-        self.named_buffers[name].extend(self._clone_buffer(self.samples))
-        log('Appended samples of buffer to named buffer "%s".' % name)
+        self.named_buffers[name].extend(self._clone_buffer(self.samples[:upto]))
+        log('Appended copies of first %d samples of current buffer to named buffer "%s".' % (upto, name))
 
     def _drop(self, name):
         del self.named_buffers[name]

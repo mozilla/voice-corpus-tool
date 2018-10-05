@@ -238,6 +238,7 @@ class Sample(object):
         self.file = file
         self.transcript = transcript
         self.tags = tags
+        self.original_name = self.file.filename
         self.effects = ''
 
     def write(self, filename=None):
@@ -262,6 +263,7 @@ class Sample(object):
 
     def clone(self):
         sample = Sample(self.file, transcript=self.transcript, tags=self.tags)
+        sample.original_name = self.original_name
         sample.effects = self.effects
         return sample
 
@@ -532,6 +534,7 @@ class DataSetBuilder(CommandLineParser):
         log('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 
     def _hdf5(self, alphabet_path, hdf5_path, ninput=26, ncontext=9):
+        skipped = []
         str_to_label = {}
         alphabet_size = 0
         with codecs.open(alphabet_path, 'r', 'utf-8') as fin:
@@ -551,10 +554,19 @@ class DataSetBuilder(CommandLineParser):
             features = np.concatenate((empty_context, features, empty_context))
             transcript = np.asarray([str_to_label[c] for c in sample.transcript])
             if (2*ncontext + len(features)) < len(transcript):
-                raise ValueError('Error: Audio file {} is too short for transcription.'.format(sample.file.filename))
+                skipped.append(sample.original_name)
+                return None
             return features, len(features), transcript, len(transcript)
 
         out_data = self._map('Computing MFCC features...', self.samples, process_sample)
+        out_data = [s for s in out_data if s is not None]
+        if len(skipped) > 0:
+            log('WARNING - Skipped %d samples that had been too short for their transcription:' % len(skipped))
+            for s in skipped:
+                log(' - Sample origin: "%s".' % s)
+        if len(out_data) <= 0:
+            log('No samples written to feature DB "%s".' % hdf5_path)
+            return
         # list of tuples -> tuple of lists
         features, features_len, transcript, transcript_len = zip(*out_data)
 

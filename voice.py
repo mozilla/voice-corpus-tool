@@ -138,7 +138,7 @@ class CommandLineParser(object):
         log('Commands:')
         for cmd in self.command_list:
             log()
-            if isinstance(cmd, basestring):
+            if isinstance(cmd, str):
                 log(cmd + ':')
                 continue
             arg_desc = ' '.join('<%s>' % arg.name for arg in cmd.arguments)

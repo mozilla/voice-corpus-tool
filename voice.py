@@ -208,9 +208,8 @@ class WavFile(object):
 
     @property
     def stats(self):
-        self.write()
         if not self._stats:
-            entries = subprocess.check_output(['soxi', self.filename], stderr=subprocess.STDOUT)
+            entries = subprocess.check_output(['soxi', self.filename], stderr=subprocess.STDOUT).decode()
             entries = entries.strip().split('\n')
             entries = [e.split(':')[:2] for e in entries]
             entries = [(e[0].strip(), e[1].strip()) for e in entries if len(e) == 2]
@@ -249,6 +248,26 @@ class Sample(object):
             self.file = file
         elif filename:
             self.file = self.file.save_as(filename)
+
+    def pipe(self, commands):
+        self.write()
+        file = WavFile()
+        def subst(item):
+            if item == 'IN':
+                return self.file.filename
+            elif item == 'OUT':
+                return file.filename
+            else:
+                return item
+        first = None
+        last = None
+        for i, command in enumerate(commands):
+            command = [subst(item) for item in command]
+            last = subprocess.Popen(command, stdin=last.stdout if last else None, stdout=subprocess.PIPE if first is None else None)
+            if first is None:
+                first = last
+        first.wait()
+        self.file = file
 
     def add_sox_effect(self, effect):
         self.effects += ' %s' % effect
@@ -359,6 +378,12 @@ class DataSetBuilder(CommandLineParser):
 
         cmd = self.add_command('tempo', self._tempo, 'Adds a tempo effect to buffer samples')
         cmd.add_argument('factor', 'float', 'Tempo factor to apply')
+
+        cmd = self.add_command('distcompression', self._dist_compression, 'Distortion by mp3 compression')
+        cmd.add_argument('kbit', 'int', 'Virtual bandwidth in kBit/s')
+
+        cmd = self.add_command('distrate', self._dist_rate, 'Distortion by resampling')
+        cmd.add_argument('rate', 'int', 'Sample rate to apply')
 
         cmd = self.add_command('sox', self._sox, 'Adds a SoX effect to buffer samples')
         cmd.add_argument('effect', 'string', 'SoX effect name')
@@ -618,6 +643,19 @@ class DataSetBuilder(CommandLineParser):
         for s in self.samples:
             s.add_sox_effect(effect)
         log('Added tempo effect to %d samples in buffer.' % len(self.samples))
+
+    def _dist_compression(self, kbit):
+        self._map('Distorting samples...',
+                  self.samples,
+                  lambda s: s.pipe([['sox', 'IN', '-t', 'mp3', '-C', str(kbit), '-'], 
+                                    ['sox', '-t', 'mp3', '-', 'OUT']]))
+        log('Distorted %d samples in buffer by mp3 compression.' % len(self.samples))
+
+    def _dist_rate(self, rate):
+        self._map('Distorting samples...',
+                  self.samples,
+                  lambda s: s.add_sox_effect('rate %d rate %d' % (rate, int(s.file.stats['Sample Rate']))))
+        log('Distorted %d samples in buffer by resampling to different sample rate.' % len(self.samples))
 
     def _sox(self, effect, args):
         effect = '%s %s' % (effect, ' '.join(args.split(',')))

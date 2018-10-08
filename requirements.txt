@@ -1,6 +1,7 @@
 intervaltree==2.1.0
 pydub==0.20.0
 tqdm==4.25.0
+soundfile
 numpy
 scipy
 python_speech_features

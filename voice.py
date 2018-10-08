@@ -13,9 +13,9 @@ import subprocess
 import tables
 import codecs
 import numpy as np
+import soundfile as sf
 import scipy.io.wavfile as wav
 
-from multiprocessing.dummy import Pool
 from python_speech_features import mfcc
 from threading import Lock
 from random import shuffle
@@ -209,18 +209,12 @@ class WavFile(object):
     @property
     def stats(self):
         if not self._stats:
-            entries = subprocess.check_output(['soxi', self.filename], stderr=subprocess.STDOUT).decode()
-            entries = entries.strip().split('\n')
-            entries = [e.split(':')[:2] for e in entries]
-            entries = [(e[0].strip(), e[1].strip()) for e in entries if len(e) == 2]
-            self._stats = { key: value for (key, value) in entries }
+            self._stats = sf.info(self.filename)
         return self._stats
 
     @property
     def duration(self):
-        if self._duration < 0:
-            self._duration = float(subprocess.check_output(['soxi', '-D', self.filename]).strip())
-        return self._duration
+        return self.stats.duration
 
     @property
     def filesize(self):
@@ -228,9 +222,11 @@ class WavFile(object):
             self._filesize = os.path.getsize(self.filename)
         return self._filesize
 
-    @property
-    def volume(self):
-        return float(self.stats['Volume adjustment'])
+class RateEffect(object):
+    def __init__(self, rate):
+        self.rate = rate
+    def apply(self, seg):
+        return seg.set_frame_rate(self.rate)
 
 class Sample(object):
     def __init__(self, file, transcript=None, tags=[]):
@@ -238,39 +234,18 @@ class Sample(object):
         self.transcript = transcript
         self.tags = tags
         self.original_name = self.file.filename
-        self.effects = ''
+        self.effects = []
 
     def write(self, filename=None):
         if len(self.effects) > 0:
-            file = WavFile(filename=filename)
-            subprocess.check_output(['sox', self.file.filename, file.filename] + self.effects.strip().split(' '))
-            self.effects = ''
-            self.file = file
+            effects = self.effects
+            self.effects = []
+            seg = self.read_audio_segment()
+            for effect in effects:
+                seg = effect.apply(seg)
+            self.write_audio_segment(seg)
         elif filename:
             self.file = self.file.save_as(filename)
-
-    def pipe(self, commands):
-        self.write()
-        file = WavFile()
-        def subst(item):
-            if item == 'IN':
-                return self.file.filename
-            elif item == 'OUT':
-                return file.filename
-            else:
-                return item
-        first = None
-        last = None
-        for i, command in enumerate(commands):
-            command = [subst(item) for item in command]
-            last = subprocess.Popen(command, stdin=last.stdout if last else None, stdout=subprocess.PIPE if first is None else None)
-            if first is None:
-                first = last
-        first.wait()
-        self.file = file
-
-    def add_sox_effect(self, effect):
-        self.effects += ' %s' % effect
 
     def read_audio_segment(self):
         self.write()
@@ -283,7 +258,7 @@ class Sample(object):
     def clone(self):
         sample = Sample(self.file, transcript=self.transcript, tags=self.tags)
         sample.original_name = self.original_name
-        sample.effects = self.effects
+        sample.effects = self.effects[:]
         return sample
 
     def __str__(self):
@@ -363,38 +338,11 @@ class DataSetBuilder(CommandLineParser):
 
         self.add_group('Effects')
 
-        cmd = self.add_command('reverb', self._reverb, 'Adds reverberation to buffer samples')
-        cmd.add_option('wet_only', 'bool', 'If to strip source signal on output')
-        cmd.add_option('reverberance', 'float', 'Reverberance factor (between 0.0 to 1.0)')
-        cmd.add_option('hf_damping', 'float', 'HF damping factor (between 0.0 to 1.0)')
-        cmd.add_option('room_scale', 'float', 'Room scale factor (between 0.0 to 1.0)')
-        cmd.add_option('stereo_depth', 'float', 'Stereo depth factor (between 0.0 to 1.0)')
-        cmd.add_option('pre_delay', 'int', 'Pre delay in ms')
-        cmd.add_option('wet_gain', 'float', 'Wet gain in dB')
-
-        cmd = self.add_command('echo', self._echo, 'Adds an echo effect to buffer samples')
-        cmd.add_argument('gain_in', 'float', 'Gain in')
-        cmd.add_argument('gain_out', 'float', 'Gain out')
-        cmd.add_argument('delay_decay', 'string', 'Comma separated delay decay pairs - at least one (e.g. 10,0.1,20,0.2)')
-
-        cmd = self.add_command('speed', self._speed, 'Adds an speed effect to buffer samples')
-        cmd.add_argument('factor', 'float', 'Speed factor to apply')
-
-        cmd = self.add_command('pitch', self._pitch, 'Adds a pitch effect to buffer samples')
-        cmd.add_argument('cents', 'int', 'Cents (100th of a semi-tome) of shift to apply')
-
-        cmd = self.add_command('tempo', self._tempo, 'Adds a tempo effect to buffer samples')
-        cmd.add_argument('factor', 'float', 'Tempo factor to apply')
-
-        cmd = self.add_command('distcompression', self._dist_compression, 'Distortion by mp3 compression')
+        cmd = self.add_command('compr', self._compr, 'Distortion by mp3 compression')
         cmd.add_argument('kbit', 'int', 'Virtual bandwidth in kBit/s')
 
-        cmd = self.add_command('distrate', self._dist_rate, 'Distortion by resampling')
+        cmd = self.add_command('rate', self._rate, 'Resampling to different sample rate')
         cmd.add_argument('rate', 'int', 'Sample rate to apply')
-
-        cmd = self.add_command('sox', self._sox, 'Adds a SoX effect to buffer samples')
-        cmd.add_argument('effect', 'string', 'SoX effect name')
-        cmd.add_argument('args', 'string', 'Comma separated list of SoX effect parameters (no white space allowed)')
 
         cmd = self.add_command('augment', self._augment, 'Augment samples of current buffer with noise')
         cmd.add_argument('source', 'string', 'CSV file with samples to augment onto current sample buffer')
@@ -404,9 +352,9 @@ class DataSetBuilder(CommandLineParser):
         self.named_buffers = {}
         self.samples = []
 
-    def _map(self, message, lst, fun):
+    def _map(self, message, lst, fun, threads=0):
         log(message)
-        pool = Pool(1)
+        pool = Pool(cpu_count() if threads < 1 else threads)
         results = []
         for result in tqdm.tqdm(pool.imap_unordered(fun, lst), ascii=True, ncols=100, mininterval=0.5, total=len(lst)):
             results.append(result)
@@ -630,58 +578,21 @@ class DataSetBuilder(CommandLineParser):
             transcript_len_dset = file.create_array(file.root, 'transcript_len', transcript_len)
         log('Wrote features of %d samples to feature DB "%s".' % (len(features), hdf5_path))
 
-    def _reverb(self, wet_only=False, reverberance=0.5, hf_damping=0.5, room_scale=1.0, stereo_depth=1.0, pre_delay=0, wet_gain=0):
-        effect = 'reverb %s%d %d %d %d %d %d' % \
-            ('-w ' if wet_only else '', int(reverberance*100.0), int(hf_damping*100.0), int(room_scale*100.0), int(stereo_depth*100.0), pre_delay, wet_gain)
+    def _rate(self, rate):
+        effect = RateEffect(rate)
         for s in self.samples:
-            s.add_sox_effect(effect)
-        log('Added reverberation to %d samples in buffer.' % len(self.samples))
+            s.effects.append(effect)
+        log('Applied rate change to %d samples in buffer.' % len(self.samples))
 
-    def _echo(self, gain_in, gain_out, delay_decay):
-        delay_decay = delay_decay.split(',')
-        assert len(delay_decay) % 2 == 0
-        assert len(delay_decay) > 1
-        effect = 'echo %f %f %s' % (gain_in, gain_out, ' '.join(delay_decay))
-        for s in self.samples:
-            s.add_sox_effect(effect)
-        log('Added echo effect to %d samples in buffer.' % len(self.samples))
-
-    def _speed(self, factor):
-        effect = 'speed %f' % factor
-        for s in self.samples:
-            s.add_sox_effect(effect)
-        log('Added speed effect to %d samples in buffer.' % len(self.samples))
-
-    def _pitch(self, cents):
-        effect = 'pitch %d' % cents
-        for s in self.samples:
-            s.add_sox_effect(effect)
-        log('Added pitch effect to %d samples in buffer.' % len(self.samples))
-
-    def _tempo(self, factor):
-        effect = 'tempo -s %f' % factor
-        for s in self.samples:
-            s.add_sox_effect(effect)
-        log('Added tempo effect to %d samples in buffer.' % len(self.samples))
-
-    def _dist_compression(self, kbit):
-        self._map('Distorting samples...',
-                  self.samples,
-                  lambda s: s.pipe([['sox', 'IN', '-t', 'mp3', '-C', str(kbit), '-'], 
-                                    ['sox', '-t', 'mp3', '-', 'OUT']]))
-        log('Distorted %d samples in buffer by mp3 compression.' % len(self.samples))
-
-    def _dist_rate(self, rate):
-        self._map('Distorting samples...',
-                  self.samples,
-                  lambda s: s.add_sox_effect('rate %d rate %d' % (rate, int(s.file.stats['Sample Rate']))))
-        log('Distorted %d samples in buffer by resampling to different sample rate.' % len(self.samples))
-
-    def _sox(self, effect, args):
-        effect = '%s %s' % (effect, ' '.join(args.split(',')))
-        for s in self.samples:
-            s.add_sox_effect(effect)
-        log('Added %s effect to %d samples in buffer.' % (effect, len(self.samples)))
+    def _compr(self, kbit):
+        def add_compr(s):
+            with tempfile.TemporaryFile() as f:
+                seg = s.read_audio_segment()
+                seg.export(f, format='mp3', bitrate='%dk' % kbit)
+                f.seek(0, 0)
+                s.write_audio_segment(AudioSegment.from_file(f, format='mp3'))
+        self._map('Adding compression artifacts...', self.samples, add_compr, threads=1)
+        log('Applied compression artifacts to %d samples in buffer.' % len(self.samples))
 
     def _augment(self, source, times=1, gain=-8):
         aug_samples = self._load_samples(source)

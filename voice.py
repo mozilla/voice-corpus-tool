@@ -599,12 +599,14 @@ class DataSetBuilder(CommandLineParser):
         tree = IntervalTree()
 
         aug_durs = self._map('Reading augmentation sample durations...', aug_samples, lambda s: int(math.ceil(s.file.duration * 1000.0)))
-        total_aug_dur = sum(aug_durs)
+        total_aug_dur = 0
         position = 0
         for i, sample in enumerate(aug_samples):
             duration = aug_durs[i]
-            tree[position:position+duration] = sample
-            position += duration
+            if duration > 0:
+                total_aug_dur += duration
+                tree[position:position+duration] = sample
+                position += duration
 
         def prepare_sample(s):
             s.write()

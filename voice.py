@@ -2,6 +2,7 @@
 from __future__ import absolute_import, division, print_function
 
 import os
+import gc
 import csv
 import sys
 import glob
@@ -23,7 +24,8 @@ from shutil import copyfile
 from pydub import AudioSegment
 from intervaltree import IntervalTree
 from multiprocessing import cpu_count
-from multiprocessing.dummy import Pool
+from multiprocessing import Pool as ProcessPool
+from multiprocessing.dummy import Pool as ThreadPool
 
 def log(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -119,6 +121,7 @@ class CommandLineParser(object):
                 options[opt_name] = opt_value
             state.prev()
             result = cmd.action(*arg_values, **options)
+            gc.collect()
             if result:
                 return result
         return None
@@ -181,15 +184,20 @@ def to_int(str, ifnot):
         return ifnot
 
 class WavFile(object):
-    def __init__(self, filename=None, filesize=-1, duration=-1):
+    def __init__(self, filename=None, filesize=-1, duration=-1, enforce_tmp=False):
+        self.file_is_tmp = not filename or enforce_tmp
         self.filename = os.path.abspath(filename) if filename else get_tmp_filename()
         self._filesize = filesize
         self._duration = duration
-        self.file_is_tmp = not filename
         self._stats = None
+        # if self.file_is_tmp:
+        #    log('New tmp file %s.' % self.filename)
+        # else:
+        #    log('New file %s.' % self.filename)
 
     def __del__(self):
         if self.file_is_tmp and os.path.exists(self.filename):
+            # log('Deleting tmp file %s.' % self.filename)
             os.remove(self.filename)
 
     def save_as(self, filename):
@@ -352,12 +360,16 @@ class DataSetBuilder(CommandLineParser):
         self.named_buffers = {}
         self.samples = []
 
-    def _map(self, message, lst, fun, threads=0):
+    def _progress(self, message, lst, total=-1):
         log(message)
-        pool = Pool(cpu_count() if threads < 1 else threads)
+        return tqdm.tqdm(lst, ascii=True, ncols=100, mininterval=0.5, total=len(lst) if total < 0 else total)
+
+    def _map(self, message, lst, fun, use_processes=False, map_fun=lambda x: x, worker_count=0, total=-1):
+        worker_count = cpu_count() if worker_count < 1 else worker_count
+        pool = ProcessPool(worker_count) if use_processes else ThreadPool(worker_count)
         results = []
-        for result in tqdm.tqdm(pool.imap_unordered(fun, lst), ascii=True, ncols=100, mininterval=0.5, total=len(lst)):
-            results.append(result)
+        for result in self._progress(message, pool.imap_unordered(fun, lst), total=len(lst) if total < 0 else total):
+            results.append(map_fun(result))
         pool.close()
         pool.join()
         return results
@@ -385,7 +397,7 @@ class DataSetBuilder(CommandLineParser):
                 tags_index       = head.index('tags')         if 'tags'         in head else None
                 samples = [Sample(WavFile(filename=checkrelative(row[filename_index]),
                                           filesize=to_int(row[filesize_index], -1) if filesize_index else -1,
-                                          duration=to_float(row[duration_index], -1) if duration_index else -1), 
+                                          duration=to_float(row[duration_index], -1) if duration_index else -1),
                                   transcript=row[transcript_index] if transcript_index else None,
                                   tags=row[tags_index].split() if tags_index else []) for row in rows]
         elif source in self.named_buffers:
@@ -611,38 +623,57 @@ class DataSetBuilder(CommandLineParser):
         def prepare_sample(s):
             s.write()
             return int(math.ceil(s.file.duration * 1000.0))
-        orig_durs = self._map('Reading buffer sample durations...', self.samples, prepare_sample)
+        orig_durs = self._map('Finalizing buffer samples...', self.samples, prepare_sample)
         total_orig_dur = sum(orig_durs)
 
-        positions = []
+        augmentations = []
         position = 0
-        for i, sample in enumerate(self.samples):
-            duration = orig_durs[i]
-            positions.append((position, sample))
-            position += duration
-
-        def augment_sample(pos_sample):
-            position, sample = pos_sample
-            orig_seg = sample.read_audio_segment()
-            orig_dur = len(orig_seg)
-            aug_seg = AudioSegment.silent(duration=orig_dur)
+        for i, sample in self._progress('Computing intervals...',
+                                        enumerate(self.samples),
+                                        total=len(self.samples)):
+            orig_dur = orig_durs[i]
             sub_pos = position
-            for i in range(times):
+            overlays = []
+            for _ in range(times):
                 inters = tree[sub_pos:sub_pos + orig_dur]
                 for inter in inters:
-                    seg = inter.data.read_audio_segment()
                     offset = inter.begin - sub_pos
-                    if offset < 0:
-                        seg = seg[-offset:]
-                        offset = 0
-                    aug_seg = aug_seg.overlay(seg, position=offset)
+                    overlays.append((offset, inter.data.file.filename))
                 sub_pos = (sub_pos + total_orig_dur) % total_aug_dur
-            aug_seg = aug_seg + (orig_seg.dBFS - aug_seg.dBFS + gain)
-            orig_seg = orig_seg.overlay(aug_seg)
-            sample.write_audio_segment(orig_seg)
+            position += orig_dur
+            augmentations.append((i, sample.file.filename, get_tmp_filename(), overlays, gain))
 
-        self._map('Augmenting samples...', positions, augment_sample)
+        def exchange_file(index_filename):
+            index, filename = index_filename
+            sample = self.samples[index]
+            orig_file = sample.file
+            sample.file = WavFile(filename,
+                                  filesize=orig_file.filesize,
+                                  duration=orig_file.duration,
+                                  enforce_tmp=True)
+
+        self._map('Augmenting samples...',
+                  augmentations,
+                  augment_sample,
+                  use_processes=True,
+                  map_fun=exchange_file)
         log('Augmented %d samples in buffer.' % len(self.samples))
+
+def augment_sample(augmentation):
+    index, src_file, dst_file, overlays, gain = augmentation
+    orig_seg = AudioSegment.from_file(src_file, format="wav")
+    aug_seg = AudioSegment.silent(duration=len(orig_seg))
+    for overlay in overlays:
+        offset, overlay_file = overlay
+        overlay_seg = AudioSegment.from_file(overlay_file, format="wav")
+        if offset < 0:
+            overlay_seg = overlay_seg[-offset:]
+            offset = 0
+        aug_seg = aug_seg.overlay(overlay_seg, position=offset)
+    aug_seg = aug_seg + (orig_seg.dBFS - aug_seg.dBFS + gain)
+    orig_seg = orig_seg.overlay(aug_seg)
+    orig_seg.export(dst_file, format="wav")
+    return (index, dst_file)
 
 def main():
     parser = DataSetBuilder()
@@ -654,4 +685,5 @@ if __name__ == '__main__' :
     except KeyboardInterrupt:
         log('Interrupted by user')
     if tmp_dir:
+        log('Removing tmp files')
         shutil.rmtree(tmp_dir)

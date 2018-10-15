@@ -552,6 +552,8 @@ class DataSetBuilder(CommandLineParser):
                 alphabet_size += 1
 
         def process_sample(sample):
+            if len(sample.transcript) == 0:
+                return None
             sample.write()
             try:
                 samplerate, audio = wav.read(sample.file.filename)
@@ -569,7 +571,7 @@ class DataSetBuilder(CommandLineParser):
         out_data = self._map('Computing MFCC features...', self.samples, process_sample)
         out_data = [s for s in out_data if s is not None]
         if len(skipped) > 0:
-            log('WARNING - Skipped %d samples that had been too short for their transcription or had been missed:' % len(skipped))
+            log('WARNING - Skipped %d samples that had no transcription, had been too short for their transcription or had been missed:' % len(skipped))
             for s in skipped:
                 log(' - Sample origin: "%s".' % s)
         if len(out_data) <= 0:

@@ -1,0 +1,23 @@
+#!/bin/bash
+bsrc="${BASH_SOURCE[0]}"
+while [ -h "$bsrc" ]; do
+  base_dir="$( cd -P "$( dirname "$bsrc" )" >/dev/null && pwd )"
+  bsrc="$(readlink "$bsrc")"
+  [[ $bsrc != /* ]] && bsrc="$base_dir/$bsrc"
+done
+base_dir="$( cd -P "$( dirname "$bsrc" )" >/dev/null && pwd )"
+source "${base_dir}/../venv/bin/activate"
+
+alphabet=$1
+shift
+
+for csv in "$@"
+do
+    hdf5="${csv%".csv"}.hdf5"
+    if [ -f "$hdf5" ] ; then
+        echo "\"$hdf5\" already exists. Skipping..."
+    else
+        echo "Generating \"$hdf5\"..."
+        python3 -u "${base_dir}/../voice.py" add "$csv" hdf5 "$alphabet" "$hdf5"
+    fi
+done

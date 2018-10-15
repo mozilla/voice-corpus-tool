@@ -553,7 +553,10 @@ class DataSetBuilder(CommandLineParser):
 
         def process_sample(sample):
             sample.write()
-            samplerate, audio = wav.read(sample.file.filename)
+            try:
+                samplerate, audio = wav.read(sample.file.filename)
+            except:
+                return None
             features = mfcc(audio, samplerate=samplerate, numcep=ninput)[::2]
             empty_context = np.zeros((ncontext, ninput), dtype=features.dtype)
             features = np.concatenate((empty_context, features, empty_context))
@@ -566,7 +569,7 @@ class DataSetBuilder(CommandLineParser):
         out_data = self._map('Computing MFCC features...', self.samples, process_sample)
         out_data = [s for s in out_data if s is not None]
         if len(skipped) > 0:
-            log('WARNING - Skipped %d samples that had been too short for their transcription:' % len(skipped))
+            log('WARNING - Skipped %d samples that had been too short for their transcription or had been missed:' % len(skipped))
             for s in skipped:
                 log(' - Sample origin: "%s".' % s)
         if len(out_data) <= 0:
@@ -603,7 +606,7 @@ class DataSetBuilder(CommandLineParser):
                 seg.export(f, format='mp3', bitrate='%dk' % kbit)
                 f.seek(0, 0)
                 s.write_audio_segment(AudioSegment.from_file(f, format='mp3'))
-        self._map('Adding compression artifacts...', self.samples, add_compr, threads=1)
+        self._map('Adding compression artifacts...', self.samples, add_compr, worker_count=1)
         log('Applied compression artifacts to %d samples in buffer.' % len(self.samples))
 
     def _augment(self, source, times=1, gain=-8):

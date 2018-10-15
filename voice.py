@@ -553,11 +553,13 @@ class DataSetBuilder(CommandLineParser):
 
         def process_sample(sample):
             if len(sample.transcript) == 0:
+                skipped.append(sample.original_name)
                 return None
             sample.write()
             try:
                 samplerate, audio = wav.read(sample.file.filename)
             except:
+                skipped.append(sample.original_name)
                 return None
             features = mfcc(audio, samplerate=samplerate, numcep=ninput)[::2]
             empty_context = np.zeros((ncontext, ninput), dtype=features.dtype)

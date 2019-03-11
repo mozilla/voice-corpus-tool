@@ -362,7 +362,7 @@ class DataSetBuilder(CommandLineParser):
 
     def _progress(self, message, lst, total=-1):
         log(message)
-        return tqdm.tqdm(lst, ascii=True, ncols=100, mininterval=0.5, total=len(lst) if total < 0 else total)
+        return tqdm.tqdm(lst, ascii=True, ncols=100, mininterval=60.0, total=len(lst) if total < 0 else total)
 
     def _map(self, message, lst, fun, use_processes=False, map_fun=lambda x: x, worker_count=0, total=-1):
         worker_count = cpu_count() if worker_count < 1 else worker_count
@@ -694,3 +694,4 @@ if __name__ == '__main__' :
     if tmp_dir:
         log('Removing tmp files')
         shutil.rmtree(tmp_dir)
+

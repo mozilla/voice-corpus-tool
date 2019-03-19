@@ -558,13 +558,13 @@ class DataSetBuilder(CommandLineParser):
             sample.write()
             try:
                 samplerate, audio = wav.read(sample.file.filename)
+                transcript = np.asarray([str_to_label[c] for c in sample.transcript])
             except:
                 skipped.append(sample.original_name)
                 return None
             features = mfcc(audio, samplerate=samplerate, numcep=ninput)[::2]
             empty_context = np.zeros((ncontext, ninput), dtype=features.dtype)
             features = np.concatenate((empty_context, features, empty_context))
-            transcript = np.asarray([str_to_label[c] for c in sample.transcript])
             if (2*ncontext + len(features)) < len(transcript):
                 skipped.append(sample.original_name)
                 return None

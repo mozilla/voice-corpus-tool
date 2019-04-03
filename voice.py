@@ -337,6 +337,7 @@ class DataSetBuilder(CommandLineParser):
 
         cmd = self.add_command('write', self._write, 'Write samples of current buffer to disk')
         cmd.add_argument('dir_name', 'string', 'Path to the new sample directory. The directory and a file with the same name plus extension ".csv" should not exist.')
+        cmd.add_option('just_csv', 'bool', 'Prevents writing samples')
 
         cmd = self.add_command('hdf5', self._hdf5, 'Write samples to hdf5 MFCC feature DB that can be used by DeepSpeech')
         cmd.add_argument('alphabet_path', 'string', 'Path to DeepSpeech alphabet file to use for transcript mapping')
@@ -516,25 +517,33 @@ class DataSetBuilder(CommandLineParser):
             sys.stdout.write(seg.set_sample_width(2).set_frame_rate(88200).raw_data)
         log('Piped %d samples.' % len(self.samples))
 
-    def _write(self, dir_name):
+    def _write(self, dir_name, just_csv=False):
         parent, name = os.path.split(os.path.normpath(dir_name))
         csv_filename = os.path.join(parent, name + '.csv')
         if os.path.exists(dir_name) or os.path.exists(csv_filename):
             return 'Cannot write buffer, as either "%s" or "%s" already exist.' % (dir_name, csv_filename)
-        os.makedirs(dir_name)
+        if not just_csv:
+            os.makedirs(dir_name)
         samples = [(i, sample) for i, sample in enumerate(self.samples)]
         with open(csv_filename, 'w') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['wav_filename', 'wav_filesize', 'transcript', 'tags', 'duration'])
             def write_sample(i_sample):
                 i, sample = i_sample
-                samplename = 'sample-%d.wav' % i
-                sample.write(filename=os.path.join(dir_name, samplename))
-                writer.writerow([os.path.join(name, samplename),
-                                 sample.file.filesize,
-                                 sample.transcript,
-                                 ' '.join(sample.tags),
-                                 sample.file.duration])
+                if just_csv:
+                    writer.writerow([sample.file.filename,
+                                     sample.file.filesize,
+                                     sample.transcript,
+                                     ' '.join(sample.tags),
+                                     sample.file.duration])
+                else:
+                    samplename = 'sample-%d.wav' % i
+                    sample.write(filename=os.path.join(dir_name, samplename))
+                    writer.writerow([os.path.join(name, samplename),
+                                     sample.file.filesize,
+                                     sample.transcript,
+                                     ' '.join(sample.tags),
+                                     sample.file.duration])
             self._map('Writing samples...', samples, write_sample)
         log('Wrote %d samples to directory "%s" and listed them in CSV file "%s".' % (len(self.samples), dir_name, csv_filename))
 

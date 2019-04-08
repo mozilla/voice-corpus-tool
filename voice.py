@@ -251,7 +251,7 @@ class Sample(object):
             seg = self.read_audio_segment()
             for effect in effects:
                 seg = effect.apply(seg)
-            self.write_audio_segment(seg)
+            self.write_audio_segment(seg, filename=filename)
         elif filename:
             self.file = self.file.save_as(filename)
 
@@ -259,8 +259,8 @@ class Sample(object):
         self.write()
         return AudioSegment.from_file(self.file.filename, format="wav")
 
-    def write_audio_segment(self, segment):
-        self.file = WavFile()
+    def write_audio_segment(self, segment, filename=None):
+        self.file = WavFile(filename=filename)
         segment.export(self.file.filename, format="wav")
 
     def clone(self):

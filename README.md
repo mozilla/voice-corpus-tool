@@ -60,7 +60,7 @@ Commands:
 Buffer operations:
 
   shuffle  
-	Randoimize order of the sample buffer
+	Randomize order of the sample buffer
 
   order  
 	Order samples in buffer by length

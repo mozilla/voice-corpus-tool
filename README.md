@@ -60,12 +60,12 @@ Commands:
 Buffer operations:
 
   shuffle  
-	Randomize order of the sample buffer
+	Randoimize order of the sample buffer
 
   order  
 	Order samples in buffer by length
 
-  reverse  
+  reverse  
 	Reverse order of samples in buffer
 
   take <number> 
@@ -84,29 +84,51 @@ Buffer operations:
 		number: int - Number of samples
 
   find <keyword> 
-	Drop all samples whose transcription does not contain a keyword
+	Drop all samples, whose transcription does not contain a keyword
 	Arguments:
 		keyword: string - Keyword to look for in transcriptions
+
+  tagged <tag> 
+	Keep only samples with a specific tag
+	Arguments:
+		tag: string - Tag to look for
+
+  settag <tag> 
+	Sets a tag on all samples of current buffer
+	Arguments:
+		tag: string - Tag to set
 
   clear  
 	Clears sample buffer
 
 Named buffers:
 
-  set <name> 
-	Replaces named buffer with contents of buffer
+  set <name> [-percent <percent>]
+	Replaces named buffer with portion of buffer
 	Arguments:
 		name: string - Name of the named buffer
+	Options:
+		-percent: int - Percentage of samples from the beginning of buffer. If omitted, complete buffer.
 
-  stash <name> 
-	Moves buffer to named buffer (buffer will be empty afterwards)
+  stash <name> [-percent <percent>]
+	Moves buffer portion to named buffer. Moved samples will not remain in main buffer.
 	Arguments:
 		name: string - Name of the named buffer
+	Options:
+		-percent: int - Percentage of samples from the beginning of buffer. If omitted, complete buffer.
 
-  push <name> 
-	Appends buffer to named buffer
+  push <name> [-percent <percent>]
+	Appends portion of buffer samples to named buffer
 	Arguments:
 		name: string - Name of the named buffer
+	Options:
+		-percent: int - Percentage of samples from the beginning of buffer. If omitted, complete buffer.
+
+  slice <name> <percent> 
+	Moves portion of named buffer to current buffer
+	Arguments:
+		name: string - Name of the named buffer
+		percent: int - Percentage of samples from the beginning of named buffer
 
   drop <name> 
 	Drops named buffer
@@ -121,59 +143,44 @@ Output:
   play  
 	Play samples of current buffer
 
-  write <dir_name> 
+  pipe  
+	Pipe raw sample data of current buffer to stdout. Could be piped to "aplay -r 44100 -c 2 -t raw -f s16".
+
+  write <dir_name> [-just_csv]
 	Write samples of current buffer to disk
 	Arguments:
 		dir_name: string - Path to the new sample directory. The directory and a file with the same name plus extension ".csv" should not exist.
+	Options:
+		-just_csv: bool - Prevents writing samples
+
+  hdf5 <alphabet_path> <hdf5_path> [-ninput <ninput>] [-ncontext <ncontext>]
+	Write samples to hdf5 MFCC feature DB that can be used by DeepSpeech
+	Arguments:
+		alphabet_path: string - Path to DeepSpeech alphabet file to use for transcript mapping
+		hdf5_path: string - Target path of hdf5 feature DB
+	Options:
+		-ninput: int - Number of MFCC features (defaults to 26)
+		-ncontext: int - Number of frames in context window (defaults to 9)
 
 Effects:
 
-  reverb  [-room_scale <room_scale>] [-hf_damping <hf_damping>] [-wet_gain <wet_gain>] [-stereo_depth <stereo_depth>] [-reverberance <reverberance>] [-wet_only] [-pre_delay <pre_delay>]
-	Adds reverberation to buffer samples
-	Options:
-		-room_scale: float - Room scale factor (between 0.0 to 1.0)
-		-hf_damping: float - HF damping factor (between 0.0 to 1.0)
-		-wet_gain: float - Wet gain in dB
-		-stereo_depth: float - Stereo depth factor (between 0.0 to 1.0)
-		-reverberance: float - Reverberance factor (between 0.0 to 1.0)
-		-wet_only: bool - If to strip source signal on output
-		-pre_delay: int - Pre delay in ms
-
-  echo <gain_in> <gain_out> <delay_decay> 
-	Adds an echo effect to buffer samples
+  compr <kbit> 
+	Distortion by mp3 compression
 	Arguments:
-		gain_in: float - Gain in
-		gain_out: float - Gain out
-		delay_decay: string - Comma separated delay decay pairs - at least one (e.g. 10,0.1,20,0.2)
+		kbit: int - Virtual bandwidth in kBit/s
 
-  speed <factor> 
-	Adds an speed effect to buffer samples
+  rate <rate> 
+	Resampling to different sample rate
 	Arguments:
-		factor: float - Speed factor to apply
+		rate: int - Sample rate to apply
 
-  pitch <cents> 
-	Adds a pitch effect to buffer samples
-	Arguments:
-		cents: int - Cents (100th of a semi-tome) of shift to apply
-
-  tempo <factor> 
-	Adds a tempo effect to buffer samples
-	Arguments:
-		factor: float - Tempo factor to apply
-
-  sox <effect> <args> 
-	Adds a SoX effect to buffer samples
-	Arguments:
-		effect: string - SoX effect name
-		args: string - Comma separated list of SoX effect parameters (no white space allowed)
-
-  augment <source> [-gain <gain>] [-times <times>]
+  augment <source> [-times <times>] [-gain <gain>]
 	Augment samples of current buffer with noise
 	Arguments:
 		source: string - CSV file with samples to augment onto current sample buffer
 	Options:
-		-gain: float - How much gain (in dB) to apply to augmentation audio before overlaying onto buffer samples
 		-times: int - How often to apply the augmentation source to the sample buffer
+		-gain: float - How much gain (in dB) to apply to augmentation audio before overlaying onto buffer samples
 ```
 
 
